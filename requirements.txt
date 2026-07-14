@@ -1,8 +1,7 @@
-# Install with Python 3.9 or newer (see README / RUNBOOK).
+# Install with Python 3.9 or newer (see README / docs/RUNBOOK.md).
 requests
 pandas
 numpy
-matplotlib
-seaborn
-scikit-learn
 openpyxl
+# Testing
+pytest

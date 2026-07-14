@@ -28,6 +28,7 @@ RISKY_PREFIXES: Tuple[str, ...] = (
     "data/anonymized/",
     "data/structured/raw/",
     "data/structured/processed/",
+    "data/outputs/",
     "Data/",
     "outputs/",
     "reports/",
@@ -39,7 +40,6 @@ RISKY_PREFIXES: Tuple[str, ...] = (
     "wheelhouse_linux/",
     "Ba_venv/",
     "Ba_venv_backup/",
-    "delirium_env/",
     ".venv/",
     "venv/",
     "env/",
@@ -66,6 +66,7 @@ RISKY_GLOBS: Tuple[str, ...] = (
 ALLOWED_EXACT: Tuple[str, ...] = (
     "data/.gitkeep",
     "data/raw/.gitkeep",
+    "data/outputs/.gitkeep",
     "outputs/.gitkeep",
 )
 

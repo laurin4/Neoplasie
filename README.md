@@ -1,280 +1,164 @@
-# Delirium detection from anonymized ICU reports
-
-Binary delirium detection from German clinical report text, compared against multiple structured baselines derived from ICD-10 and ICDSC data.
-
-## Purpose
-
-- **Model output (binary):** `klasse = 0` → no delirium (`no_delir`), `klasse = 1` → delirium (`delir`).
-- **Signal strength** (interpretation): `niedrig` | `mittel` | `hoch` → classification maps **`mittel` and `hoch` → klasse 1**, **`niedrig` → klasse 0**.
-- **Baselines:** Several binary baseline columns per patient for evaluation (see below).
-- **Primary LLM backend:** USZ local HTTP API (Gemma-class model). **Ollama** remains available as an optional comparison backend only.
-
-Sensitive data are **not** stored in this repository; paths point to local CSVs you provide.
-
----
-
-## Primary input: `data/raw/Berichte.csv`
-
-Configured via `src/pipeline/paths.py` (`DATA_MODE`, `BERICHTE_INPUT_PATH`). Default production layout uses **`data/raw/Berichte.csv`** (semicolon-separated).
-
-Expected columns include:
-
-| Column | Role |
-|--------|------|
-| `PatientID` | Patient identifier (joined to baseline `PatientenID`) |
-| `berdat` | Report date — **used only for sorting** rows per patient |
-| `bertyp` | Optional metadata |
-| `bername` | **Excluded** from model text |
-| `diag`, `epikrise`, `jetziges_leiden`, `prozedere` | Combined into **`report_text`** per patient (section blocks), sorted by `berdat` |
-
-**`Diagnosenliste.csv` is removed** from the active pipeline. Clinical text lives in **`Berichte.csv`** (`diag`, `epikrise`, `jetziges_leiden`, `prozedere` → section blocks in `report_text`).
-
-Legacy fallback (`INPUT_MODE` in `run_pipeline.py`): `diagnosis` (synthetic only) or `txt` — production uses **`berichte`** only.
-
----
-
-## Structured baselines (`outputs/baseline/structured_baseline.csv`)
-
-Produced by `prepare_structured_data` from **`data/raw/ICD.csv`** and **`data/raw/ICDSC.csv`** only (semicolon-separated).
-
-| File | Columns |
-|------|---------|
-| `ICD.csv` | `PatientID`, `icd_hd`, `icd_code` |
-| `ICDSC.csv` | `PatientID`, `ICDSC_Max` (patient-level maximum) |
-
-`PatientID` is normalized internally to `PatientenID` in the baseline artifact.
-
-**Binary baseline columns** (all included in primary evaluation):
-
-- `baseline_icdsc_ge_1` … `baseline_icdsc_ge_5`
-- `baseline_icdsc_0`
-- `baseline_icdsc_1_to_3`
-- `baseline_icdsc_ge_4_grouped`
-- `baseline_icd10`
-
-**ICD-10 delirium definition:** main diagnosis **`icd_hd == 1`** and codes **`F05.0`**, **`F05.8`**, **`F05.9`** only. **`F05.1`** (alcohol-related delirium) and other F05 subcodes are excluded from the baseline cohort.
-
-**LLM prompts** are German (`prompts/agent_*.txt`); JSON keys remain unchanged for parsers.
-
-**Short-report fallback** (optional): `SEND_SHORT_REPORTS_WITHOUT_EVIDENCE_TO_LLM=true`, `SHORT_REPORT_CHAR_THRESHOLD=1000` — sends capped full text for short `Verlaufseintrag` / `Verlegungsbericht` / `Austrittsbericht` when the rule layer finds no snippets.
-
-**Primary baseline `baseline_composite`** — set in `src/pipeline/paths.py`:
-
-```python
-BASELINE_COMPOSITE_MODE = "AND"  # or "OR" for thesis default
-```
-
-| Mode | Definition | Use |
-|------|------------|-----|
-| `OR` | ICDSC≥4 **or** ICD10 | Thesis / sensitive baseline |
-| `AND` | ICDSC≥4 **and** ICD10 | Presentation: «sichere Delirfälle» (high-confidence coded delir) |
-
-Model-positive / AND-baseline-negative cases are **Delirkandidaten** (possible uncoded or underdocumented delir), not strict false positives.
-
-**ICDSC:** `max_icdsc` = `ICDSC_Max`; binary columns derived from thresholds (e.g. `baseline_icdsc_ge_4` ⇔ `ICDSC_Max >= 4`).
-
-**Legacy:** `baseline_reference_class` (0/1/2) may still be written for backward compatibility; it is **not** the primary evaluation target. Use binary baselines and `evaluate_predictions`.
-
-### Manual validation (PRIMARY thesis evaluation)
-
-| Unit | Role |
-|------|------|
-| Report | One prediction per report (`klasse` → `model_report_prediction`) |
-| Patient cohort | 100 unique patients; export **all** Verlauf / Verlegung / Austritt reports each |
-| Manual GT | `manual_report_ground_truth` (0/1) per report |
-| Derived patient GT | `derived_manual_patient_ground_truth` = max(report GT) — do not annotate manually |
-| ICDSC / ICD10 in cohort | Reference signals only (exploratory comparison in `evaluate_manual_validation`) |
-
-**Full thesis run (copy-paste):** see **[HANDOVER_SUMMARY.md — FINAL THESIS WORKFLOW (FULL RUN)](HANDOVER_SUMMARY.md#final-thesis-workflow-full-run)**. Summary: `unset MAX_REPORTS` → full `prepare_structured_data` + `run_pipeline` + `run_validation_suite` → export cohort + slim labels → `freeze_validation_cohort` → annotate `manual_report_labels_frozen.csv` → `evaluate_manual_validation`.
-
----
-
-## LLM providers
-
-### Primary: USZ API (default)
-
-No local Ollama is required for the default run.
-
-```bash
-export LLM_PROVIDER=usz_api
-export USZ_LLM_URL=http://localhost:8100/generate
-export LLM_MODEL_LABEL=gemma4_26b_usz
-```
-
-If `LLM_MODEL_LABEL` is unset with `usz_api`, the code defaults to **`gemma4_26b_usz`**.  
-`OLLAMA_MODEL` is **not** required when using USZ.
-
-### Optional comparison: Ollama
-
-```bash
-export LLM_PROVIDER=ollama
-export OLLAMA_URL=http://127.0.0.1:11500
-export OLLAMA_MODEL=qwen2.5:7b
-```
-
-### Shared generation settings (both backends)
-
-```bash
-export LLM_TEMPERATURE=0
-export LLM_TOP_P=1
-export LLM_MAX_TOKENS=1000
-export LLM_TIMEOUT=120
-export LLM_LONG_INPUT_WARNING_CHARS=12000
-```
-
-USZ additionally:
-
-```bash
-export LLM_DISABLE_THINK=false
-```
-
-Ollama context window:
-
-```bash
-export OLLAMA_NUM_CTX=8192
-```
-
-Ollama maps `LLM_MAX_TOKENS` → `num_predict`, and uses `LLM_TEMPERATURE`, `LLM_TOP_P`, `OLLAMA_NUM_CTX` in the chat `options`.
-
-**Outputs:**
-
-- Always: `outputs/predictions/agent1_agent2_agent3_results_prompt.csv` (downstream steps read this file).
-- Copy: `outputs/predictions/agent_results_<provider>_<model_label>.csv`  
-  Examples: `agent_results_usz_api_gemma4_26b_usz.csv`, `agent_results_ollama_qwen2_5_7b.csv`.
-
-**Limit run size (pilot / dev only):** by default the **full** evaluatable corpus is processed. Cap with `MAX_REPORTS`:
-
-```bash
-MAX_REPORTS=60 python -m src.pipeline.run_pipeline   # first 60 reports (stable loader order)
-MAX_REPORTS=all python -m src.pipeline.run_pipeline   # explicit full corpus (same as unset)
-```
-
-If `MAX_REPORTS` is unset, there is **no** report cap (`paths.DEFAULT_MAX_REPORTS = None`).
-
-**Optional SQLite append log** (CSV remains the canonical artifact):
-
-```bash
-ENABLE_SQLITE_LOGGING=true python -m src.pipeline.run_pipeline
-```
-
-Writes rows to `outputs/logs/prediction_run.sqlite` (see `src/pipeline/sqlite_logging.py`).
-
-**Pre-LLM evidence extraction** (`src/preprocessing/evidence_extraction.py`): the stitched `report_text` is scanned with rule-based keyword groups (direct delirium wording, indirect symptoms, negations, prophylaxis/screening). Only bounded, section-labeled snippets are sent to the LLM as `llm_report_text`. If nothing actionable is found (e.g. negation-only), the LLM is skipped and `klasse=0`. Tune caps with:
-
-```bash
-export EVIDENCE_MAX_SNIPPETS=12
-export EVIDENCE_MAX_LLM_CHARS=8000
-export EVIDENCE_WINDOW_SENTENCES=1
-export EVIDENCE_MAX_SNIPPET_CHARS=400
-export DEBUG_LLM_OUTPUT=false   # true = verbose per-agent dumps to stdout
-```
-
----
-
-## Command order (recommended)
-
-For the **final thesis validation path** (full dataset, frozen cohort, patient-level primary metrics), use **[HANDOVER_SUMMARY.md — FINAL THESIS WORKFLOW (FULL RUN)](HANDOVER_SUMMARY.md#final-thesis-workflow-full-run)** instead of the exploratory list below.
-
-From the project root (`delirium_project/`):
-
-```bash
-python -m src.pipeline.prepare_structured_data
-python -m src.analysis.run_data_coverage_analysis   # Berichte vs baseline; Dokumentationsblatt excluded from counts
-python -m src.analysis.run_icd_icdsc_overlap_analysis
-python -m src.pipeline.run_pipeline              # report-level predictions (excludes bertyp=Dokumentationsblatt)
-python -m src.pipeline.compare_reports_vs_baseline
-python -m src.pipeline.evaluate_predictions      # primary baseline: baseline_composite (see BASELINE_COMPOSITE_MODE)
-python -m src.analysis.create_patient_reporttype_matrix
-python -m src.analysis.export_patient_validation_cohort   # PRIMARY: 100 patients, all reports each
-python -m src.analysis.export_manual_report_labels         # slim annotation CSV
-python -m src.analysis.freeze_validation_cohort          # fixed cohort (after full inference)
-# Annotate manual_report_labels.csv (or frozen copy), then:
-python -m src.analysis.evaluate_manual_validation        # uses frozen_validation_cohort/ when present
-python -m src.analysis.export_presentation_examples     # slide-ready pipeline walkthrough examples
-python -m src.analysis.run_field_delirium_analysis
-```
-
-After `compare_reports_vs_baseline`, you can generate **interpretability and error-review exports** (science / review tooling; read-only on model logic):
-
-```bash
-python -m src.analysis.run_error_review_export
-python -m src.analysis.run_keyword_analysis
-python -m src.analysis.run_field_signal_analysis
-python -m src.analysis.run_evidence_snippets_export
-python -m src.analysis.run_full_analysis_suite   # runs manual review export + keyword + field signal + evidence export
-```
-
-**One-shot validation helpers** (assumes structured baseline + predictions already exist where applicable):
-
-```bash
-python -m src.analysis.run_validation_suite
-```
-
-Outputs land under `outputs/analysis/manual_review/` (TP/TN/FP/FN samples for primary baselines), `keyword_analysis/`, `field_signal_analysis/`, `analysis/evidence/tables/`, and legacy `outputs/analysis/error_review/` (unused by the new manual review export).
-
-Optional: `python -m src.validation.validate_inputs`, `python -m src.analysis.run_exploration`, `python -m src.analysis.run_analysis`, `python -m src.analysis.run_false_negative_review`.
-
----
-
-## Outputs (overview)
-
-| Area | Location |
-|------|-----------|
-| Structured baseline | `outputs/baseline/structured_baseline.csv` |
-| Predictions (canonical) | `outputs/predictions/agent1_agent2_agent3_results_prompt.csv` |
-| Predictions (tagged copy) | `outputs/predictions/agent_results_<provider>_<model_label>.csv` |
-| Report vs baseline merge | `outputs/comparisons/report_vs_baseline_comparison.csv` (evaluable rows only) |
-| Excluded predictions (no / incomplete baseline) | `outputs/comparisons/report_vs_baseline_excluded_missing_baseline.csv` |
-| Binary baseline evaluation | `outputs/evaluation/binary_baselines/` (tables, plots, `report.txt`) |
-| Data coverage | `outputs/analysis/data_coverage/` |
-| ICD vs ICDSC overlap | `outputs/analysis/icd_icdsc_overlap/` |
-| Field keyword / OR analysis | `outputs/analysis/field_delirium/` |
-| Manual review (TP/TN/FP/FN samples, primary baselines) | `outputs/analysis/manual_review/` |
-| Legacy error-review directory | `outputs/analysis/error_review/` |
-| Optional SQLite prediction log | `outputs/logs/prediction_run.sqlite` |
-| Keyword / term stratification | `outputs/analysis/keyword_analysis/` |
-| Field signal vs model / baselines | `outputs/analysis/field_signal_analysis/` |
-| Evidence snippets (interpretability CSV) | `outputs/analysis/evidence/tables/` |
-| LLM debug dumps | `outputs/logs/llm_debug/` |
-
----
-
-## USZ API smoke test
-
-```bash
-python scripts/test_usz_llm_api.py
-```
-
----
+# NCH Neoplasie -- Tumor Histopathology Classification
+
+Extract and classify the **final neuro-oncological tumor diagnosis per patient**
+from KISIM pathology report exports.
+
+The pipeline reads an Excel export with (potentially) multiple pathology entries
+per patient, aggregates all reports for each patient, and uses a single-stage
+LLM classification to assign **exactly one** final tumor category per patient.
+Patients without usable tumor information are clearly marked so another data
+source can be used later.
+
+> Privacy: This project processes clinical pathology text. **Never commit real
+> patient data.** All committed fixtures and tests use synthetic data only. See
+> [Privacy](#privacy).
+
+## Clinical target
+
+- One final tumor classification per patient (registry semantics).
+- Prefer the **later / current** diagnosis when a diagnosis changes over time
+  (e.g. earlier `Gliom` -> later `Glioblastom` -> classify **Glioblastom**).
+- Historical diagnoses mentioned only for comparison/origin are **not** selected
+  (e.g. current `Metastase` compared with a 2007 adenocarcinoma ->
+  classify **Metastase** only).
+- Missing tumor information is **not** the same as a negative classification.
+
+Full rules: [docs/CLINICAL_RULES.md](docs/CLINICAL_RULES.md).
+
+## Input schema
+
+A KISIM Excel export with (at least) these columns:
+
+| Column | Meaning |
+|--------|---------|
+| `patnr` | Patient identifier (kept as string) |
+| `p_dat` | Pathology report timestamp |
+| `p_kom` | Free-text pathology report |
+| `p_nr`, `p_fnr`, `p_name`, `lst_fnr`, `anz_op`, `min_opdat`, `max_opdat` | Additional context (optional) |
+
+Only `patnr` and `p_kom` are strictly required. Multiple rows per patient are
+expected; some `p_kom` values may be empty. Details:
+[docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md).
+
+## Patient-level aggregation
+
+All rows for a patient are grouped by `patnr`, usable reports are sorted
+chronologically by `p_dat`, and a single `PATIENT CONTEXT` block is built for the
+model. Context length is bounded (`TUMOR_HISTOLOGY_MAX_CONTEXT_CHARS`); when
+truncation is needed the **most recent** reports are retained and the truncation
+is recorded. Patients with zero usable reports bypass the LLM entirely and are
+marked `no_tumor_information`.
+
+## Controlled vocabulary
+
+A single authoritative mapping (`src/tasks/tumor_histopathology/constants.py`)
+maps canonical category labels to the 38 `12_*` Excel output columns and covers
+synonym / spelling / umlaut / German-English / WHO variants (e.g.
+`glioblastoma multiforme -> glioblastom`, `vestibular schwannoma -> schwannom`,
+`Hirnmetastase -> metastase`). Extracranial primary cancers are **not**
+auto-mapped to a neuro-oncological category.
 
 ## Installation
 
-Python **3.9+** recommended. Install dependencies:
-
 ```bash
+python3 -m venv Ba_venv
+source Ba_venv/bin/activate
 pip install -r requirements.txt
 ```
 
----
+Offline (Ubuntu) installs can use the prebuilt wheels via
+`scripts/build_wheelhouse_linux.sh`.
 
-## Further reading
+## Configuration
 
-- **`RUNBOOK.md`** — server setup, troubleshooting, sanity checks after a run.
-- **`GIT_SETUP.md`** — how to sync code between Mac and Ubuntu without committing patient data.
-- **`PROJECT_STATUS.md`** — brief pointer; detailed narrative lives in this README.
+All environment variables use the `TUMOR_HISTOLOGY_` prefix and have safe
+defaults (generic fallbacks in parentheses):
 
-Before any commit, run the safety check:
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `TUMOR_HISTOLOGY_LLM_PROVIDER` (`LLM_PROVIDER`) | `usz_api` | `usz_api` or `ollama` |
+| `TUMOR_HISTOLOGY_USZ_LLM_URL` (`USZ_LLM_URL`) | `http://localhost:8100/generate` | USZ endpoint |
+| `TUMOR_HISTOLOGY_OLLAMA_URL` / `_OLLAMA_MODEL` | `http://127.0.0.1:11500` / `qwen2.5:7b` | Ollama fallback |
+| `TUMOR_HISTOLOGY_LLM_TEMPERATURE` | `0.1` | Sampling temperature |
+| `TUMOR_HISTOLOGY_LLM_MAX_TOKENS` | `1200` | Max output tokens |
+| `TUMOR_HISTOLOGY_LLM_TIMEOUT_SECONDS` | `240` | Request timeout |
+| `TUMOR_HISTOLOGY_LLM_MAX_RETRIES` | `1` | Transient-error retries |
+| `TUMOR_HISTOLOGY_INPUT_PATH` | `data/raw/tumor_histopathology_input.xlsx` | Default input |
+| `TUMOR_HISTOLOGY_OUTPUT_DIR` | `data/outputs` | Output directory |
+| `TUMOR_HISTOLOGY_SHEET` | first sheet | Worksheet name |
+| `TUMOR_HISTOLOGY_MAX_CONTEXT_CHARS` | `24000` | Max context characters |
+
+No secrets are read from the environment and none may be committed.
+
+## Commands
+
+Generate a synthetic demo input (no real data required):
 
 ```bash
-python scripts/check_no_sensitive_files.py
+python3 scripts/generate_synthetic_tumor_data.py --out data/raw/synthetic_tumor_input.xlsx
 ```
 
----
-
-## Synthetic data (optional)
+Inspect the data and prompt without classifying:
 
 ```bash
-python scripts/generate_synthetic_data.py
+python3 -m src.tasks.tumor_histopathology.run_pipeline --input data/raw/synthetic_tumor_input.xlsx --dry-run
+python3 -m src.tasks.tumor_histopathology.run_pipeline --input data/raw/synthetic_tumor_input.xlsx --prompt-preview
 ```
 
-Set `DATA_MODE = "synthetic"` in `src/pipeline/paths.py` to use generated CSVs under `data/structured/raw/` (see `paths.py`).
+Pilot run (first 20 patients):
+
+```bash
+python3 -m src.tasks.tumor_histopathology.run_pipeline --input data/raw/<export>.xlsx --limit 20
+```
+
+Full run (resumable):
+
+```bash
+python3 -m src.tasks.tumor_histopathology.run_pipeline --input data/raw/<export>.xlsx
+python3 -m src.tasks.tumor_histopathology.run_pipeline --input data/raw/<export>.xlsx --resume
+```
+
+Useful flags: `--sheet`, `--output`, `--limit`, `--patient-id`, `--dry-run`,
+`--resume`, `--overwrite`, `--no-llm`, `--prompt-preview`.
+
+## Output files
+
+Written to `data/outputs/` (see [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md)):
+
+- `tumor_histopathology_patient_predictions.xlsx` / `.csv` -- one row per patient,
+  one-hot `12_*` tumor column, plus `Keine_Tumorinformation` for missing-info patients.
+- `tumor_histopathology_missing_information.csv` -- patients without usable tumor text.
+- `tumor_histopathology_review.csv` -- manual-review-focused table.
+- `tumor_histopathology_progress.jsonl` -- incremental progress store (enables `--resume`).
+
+## Tests
+
+```bash
+python3 -m pytest tests
+```
+
+All tests use synthetic data and a stubbed LLM (no network, no real data).
+
+## Privacy
+
+- Real raw data, generated patient-level outputs, `.env`, Excel/CSV files,
+  caches, virtualenvs and logs are git-ignored.
+- `scripts/check_no_sensitive_files.py` blocks accidental staging of sensitive
+  paths -- run it before committing.
+
+## Known limitations
+
+- The distinction between `12_AndereCB` and `12_Andere` is **not documented**
+  in this repository; both are preserved and any patient assigned to either is
+  flagged for manual review. See [docs/CLINICAL_RULES.md](docs/CLINICAL_RULES.md).
+- The classification is LLM-based and **not clinically validated**. Outputs are
+  a decision-support draft requiring human review.
+- The real NCH registry Excel template is not included; column order follows the
+  project specification.
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) -- pipeline stages, modules, data flow
+- [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) -- input/output columns, statuses, vocabulary
+- [docs/CLINICAL_RULES.md](docs/CLINICAL_RULES.md) -- classification rules
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) -- setup, runs, resume, review, troubleshooting
