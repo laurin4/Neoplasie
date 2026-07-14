@@ -1,7 +1,13 @@
-# Install with Python 3.9 or newer (see README / docs/RUNBOOK.md).
-requests
-pandas
-numpy
-openpyxl
+# Python 3.12 (server) / 3.11 (dev) -- see README / docs/RUNBOOK.md.
+#
+# Offline install on the air-gapped server (Linux x86_64, cp312):
+#   pip install --no-index --find-links=wheelhouse -r requirements.txt
+#
+# Wheels for these exact versions (plus their dependencies) are committed under
+# wheelhouse/. Rebuild it with scripts/build_wheelhouse.sh after any change here.
+requests==2.34.2
+pandas==3.0.3
+numpy==2.5.1
+openpyxl==3.1.5
 # Testing
-pytest
+pytest==9.1.1

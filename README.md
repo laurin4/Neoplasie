@@ -60,14 +60,26 @@ auto-mapped to a neuro-oncological category.
 
 ## Installation
 
+Developer machine (with internet):
+
 ```bash
 python3 -m venv tumor_venv
 source tumor_venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Offline (Ubuntu) installs can use the prebuilt wheels via
-`scripts/build_wheelhouse_linux.sh`.
+Air-gapped server (offline, Linux x86_64, Python 3.12) — dependency wheels are
+committed under `wheelhouse/`:
+
+```bash
+python3 -m venv tumor_venv
+source tumor_venv/bin/activate
+pip install --no-index --find-links=wheelhouse -r requirements.txt
+```
+
+The venv is never committed (machine-specific, not relocatable). Rebuild the
+wheelhouse after changing `requirements.txt` with `scripts/build_wheelhouse.sh`.
+See `docs/RUNBOOK.md` for details.
 
 ## Configuration
 

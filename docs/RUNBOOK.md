@@ -4,15 +4,42 @@ Operational guide for running the tumor histopathology pipeline.
 
 ## 1. Setup
 
+### Air-gapped server (offline, Linux x86_64, Python 3.12)
+
+Dependency wheels are committed under `wheelhouse/`, so no internet is needed:
+
+```bash
+cd ~/Neoplasie
+git pull                                   # brings code + wheelhouse/
+python3 -m venv tumor_venv
+source tumor_venv/bin/activate
+pip install --no-index --find-links=wheelhouse -r requirements.txt
+python3 -m pytest tests                    # sanity check (synthetic only)
+```
+
+The venv itself is NOT in git (it is machine-specific and not relocatable);
+always create it fresh on the server from the wheelhouse.
+
+Requires glibc >= 2.27 (`ldd --version`). Any modern distro (Ubuntu 18.04+,
+RHEL/Alma 8+) satisfies this.
+
+### Developer machine (with internet)
+
 ```bash
 python3 -m venv tumor_venv
 source tumor_venv/bin/activate
 pip install -r requirements.txt
-python3 -m pytest tests        # sanity check (synthetic only)
+python3 -m pytest tests
 ```
 
-Offline Ubuntu: build wheels once with `scripts/build_wheelhouse_linux.sh`, then
-`pip install --no-index --find-links wheelhouse_linux -r requirements.txt`.
+### Rebuilding the wheelhouse
+
+After changing `requirements.txt`, rebuild the committed Linux wheels (run on
+any machine with internet) and commit the result:
+
+```bash
+scripts/build_wheelhouse.sh
+```
 
 ## 2. Configure the LLM
 

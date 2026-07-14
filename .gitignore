@@ -60,10 +60,13 @@ __pycache__/
 # =====================================================================
 # Offline wheels / models
 # =====================================================================
-wheelhouse/
+# NOTE: wheelhouse/ is intentionally COMMITTED so the air-gapped server can
+# install dependencies offline (pip --no-index --find-links=wheelhouse).
+# Do not ignore it. Large archives and model blobs stay out of git.
+*.tar.gz
+*.zip
 wheelhouse_linux/
 wheelhouse_linux.zip
-*.tar.gz
 models/
 models_Qwen/
 models_Ollama/

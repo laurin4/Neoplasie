@@ -36,8 +36,7 @@ RISKY_PREFIXES: Tuple[str, ...] = (
     "models/",
     "models_Qwen/",
     "models_Ollama/",
-    "wheelhouse/",
-    "wheelhouse_linux/",
+    # NOTE: wheelhouse/ is intentionally committed (offline install); not risky.
     "tumor_venv/",
     "Ba_venv/",
     "Ba_venv_backup/",
