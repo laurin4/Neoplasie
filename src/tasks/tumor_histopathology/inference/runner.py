@@ -16,7 +16,7 @@ from typing import Callable, List, Optional
 import pandas as pd
 
 from src.tasks.tumor_histopathology.inference import prompt as prompt_mod
-from src.tasks.tumor_histopathology.inference.llm_client import LLMCallError, call_llm
+from src.tasks.tumor_histopathology.inference.llm_client import call_llm
 from src.tasks.tumor_histopathology.inference.parse import parse_tumor_response
 from src.tasks.tumor_histopathology.inference.result import PatientResult
 from src.tasks.tumor_histopathology.io.schema import (
@@ -124,10 +124,10 @@ def classify_patient(
 
     try:
         raw = llm_callable(messages)
-    except LLMCallError as exc:
+    except Exception as exc:  # noqa: BLE001 - never let one patient crash the run
         result.classification_status = STATUS_LLM_FAILED
         result.llm_failed = True
-        result.error_message = str(exc)
+        result.error_message = f"{type(exc).__name__}: {exc}"
         _compute_manual_review(result)
         return result
 
@@ -190,8 +190,17 @@ def run_inference(
 
     done: dict[str, PatientResult] = {}
     if resume and progress_path.exists():
-        done = _load_progress(progress_path)
-        LOGGER.info("Resume: %d patient(s) already completed", len(done))
+        loaded = _load_progress(progress_path)
+        # Retry transient LLM failures on resume; keep every other outcome.
+        done = {
+            pid: r for pid, r in loaded.items()
+            if r.classification_status != STATUS_LLM_FAILED
+        }
+        retryable = len(loaded) - len(done)
+        LOGGER.info(
+            "Resume: %d completed, %d previously-failed will be retried",
+            len(done), retryable,
+        )
 
     results: List[PatientResult] = []
     # Open in append mode so a resumed run continues the same file.

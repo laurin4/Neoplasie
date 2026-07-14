@@ -127,10 +127,18 @@ def _call_provider_once(messages: list) -> str:
 def call_llm(messages: list) -> str:
     """Provider-agnostic entry point with bounded retries.
 
-    Retries only on transient transport errors. After all retries are exhausted
-    it raises ``LLMCallError`` so the caller can mark the patient ``llm_failed``
-    without crashing the pipeline.
+    Retries transient transport errors AND server-side errors (e.g. HTTP 5xx),
+    which are often intermittent. After all retries are exhausted -- for any
+    kind of call/response error -- it raises ``LLMCallError`` so the caller can
+    mark the patient ``llm_failed`` and the run continues. A misconfiguration
+    (unknown provider) fails fast and is NOT swallowed.
     """
+    provider = config.get_provider()
+    if provider not in config.SUPPORTED_PROVIDERS:
+        raise ValueError(
+            f"Unknown provider={provider!r}; allowed: {config.SUPPORTED_PROVIDERS}"
+        )
+
     timeout = config.get_timeout_seconds()
     max_retries = config.get_max_retries()
     total_attempts = max_retries + 1
@@ -139,11 +147,11 @@ def call_llm(messages: list) -> str:
     for attempt in range(1, total_attempts + 1):
         try:
             return _call_provider_once(messages)
-        except RETRYABLE_EXCEPTIONS as exc:
+        except Exception as exc:  # noqa: BLE001 - one bad response must not kill the run
             last_exc = exc
             if attempt <= max_retries:
                 LOGGER.warning(
-                    "LLM transient failure (%s) attempt=%d/%d; retrying in %ds",
+                    "LLM call failure (%s) attempt=%d/%d; retrying in %ds",
                     type(exc).__name__, attempt, total_attempts, RETRY_WAIT_SECONDS,
                 )
                 time.sleep(RETRY_WAIT_SECONDS)
@@ -151,6 +159,7 @@ def call_llm(messages: list) -> str:
             break
 
     err_name = type(last_exc).__name__ if last_exc is not None else "Timeout"
+    detail = str(last_exc) if last_exc is not None else ""
     raise LLMCallError(
-        f"{err_name} after {timeout}s (retries={max_retries})"
+        f"{err_name} after {timeout}s (retries={max_retries}): {detail}"
     ) from last_exc

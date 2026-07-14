@@ -19,10 +19,19 @@ case-insensitively; unknown columns are kept (never silently dropped).
 - `usable` -- `p_kom` has content.
 - `missing_text` -- `p_kom` empty / whitespace / NaN.
 
+### De-duplication (prefiltering)
+
+By default the loader collapses repeated pathology reports that have identical
+text (whitespace/case-insensitive) for the same patient, keeping the
+earliest-dated copy. Blank/missing-text rows are never removed, and no patient
+is ever dropped. This keeps prompts small and avoids feeding the model the same
+report many times. Disable with `--keep-duplicates`.
+
 ### Dataset summary (printed at startup)
 
 total rows, unique patients, rows with/without pathology text, patients with/
-without a usable report, date-parse failures, duplicate rows.
+without a usable report, date-parse failures, duplicate reports detected,
+duplicate reports removed.
 
 ## Classification status taxonomy
 

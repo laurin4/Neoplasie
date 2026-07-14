@@ -45,6 +45,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--resume", action="store_true", help="Resume from the progress file.")
     p.add_argument("--overwrite", action="store_true", help="Delete prior progress/outputs first.")
     p.add_argument("--no-llm", action="store_true", help="Run plumbing without calling the LLM.")
+    p.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help="Keep repeated identical reports per patient (default: de-duplicate).",
+    )
     p.add_argument("--prompt-preview", action="store_true", help="Print the prompt for one patient and exit.")
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
     return p
@@ -94,7 +99,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     output_dir = Path(args.output) if args.output else config.get_output_dir()
 
     try:
-        loaded = load_input(input_path, sheet_name=sheet)
+        loaded = load_input(
+            input_path, sheet_name=sheet, deduplicate=not args.keep_duplicates
+        )
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

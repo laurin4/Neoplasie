@@ -6,7 +6,7 @@ is synthetic; the LLM is stubbed, so no network and no real patient data.
 
 from __future__ import annotations
 
-from _synthetic import StubLLM, make_input_df, tumor_json, write_xlsx
+from _synthetic import StubLLM, make_input_df, tumor_json, write_xlsx  # noqa: F401
 
 from src.tasks.tumor_histopathology.constants import TARGET_COLUMNS
 from src.tasks.tumor_histopathology.export.patient_output import build_patient_row
@@ -152,3 +152,44 @@ def test_llm_failure_marked(tmp_path):
     assert r.classification_status == STATUS_LLM_FAILED
     assert r.llm_failed is True
     assert r.manual_review_required is True
+
+
+def test_generic_server_error_does_not_crash_run(tmp_path):
+    # A non-LLMCallError (e.g. HTTP 500 surfaced as RuntimeError) must be caught,
+    # marked llm_failed, and the run must continue to the next patient.
+    def boom(messages):
+        raise RuntimeError("USZ LLM API HTTP 500: Internal Server Error")
+
+    rows = [
+        {"patnr": "P1", "p_dat": "2021-01-01", "p_kom": "Glioblastom"},
+        {"patnr": "P2", "p_dat": "2021-01-02", "p_kom": "Meningeom"},
+    ]
+    results, _ = _run(rows, boom, tmp_path)
+    assert results["P1"].classification_status == STATUS_LLM_FAILED
+    assert results["P2"].classification_status == STATUS_LLM_FAILED  # run continued
+
+
+def test_resume_retries_previously_failed_patient(tmp_path):
+    from src.tasks.tumor_histopathology.io.input_loader import load_input
+    from src.tasks.tumor_histopathology.preprocessing.aggregate_patient_reports import (
+        build_patient_records,
+    )
+    from src.tasks.tumor_histopathology.inference.runner import run_inference
+
+    path = write_xlsx(make_input_df([
+        {"patnr": "P1", "p_dat": "2021-01-01", "p_kom": "Glioblastom"},
+    ]), tmp_path / "in.xlsx")
+    records = build_patient_records(load_input(path).df)
+
+    # First run fails (server error).
+    def boom(messages):
+        raise RuntimeError("HTTP 500")
+
+    run_inference(records, output_dir=tmp_path, llm_callable=boom)
+
+    # Resume with a healthy stub: the failed patient is retried and succeeds.
+    good = StubLLM(default=tumor_json("Glioblastom"))
+    results = run_inference(records, output_dir=tmp_path, llm_callable=good, resume=True)
+    assert len(good.calls) == 1
+    assert results[0].classification_status == STATUS_SUCCESS
+    assert results[0].predicted_tumor_category == "glioblastom"

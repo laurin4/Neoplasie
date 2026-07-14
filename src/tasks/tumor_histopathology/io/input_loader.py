@@ -55,6 +55,7 @@ class DatasetSummary:
     patients_without_usable_report: int = 0
     date_parse_failures: int = 0
     duplicate_rows: int = 0
+    duplicates_removed: int = 0
 
     def as_lines(self) -> List[str]:
         return [
@@ -65,7 +66,8 @@ class DatasetSummary:
             f"patients with usable report:   {self.patients_with_usable_report}",
             f"patients without usable report:{self.patients_without_usable_report}",
             f"date parse failures:           {self.date_parse_failures}",
-            f"duplicate rows:                {self.duplicate_rows}",
+            f"duplicate reports detected:    {self.duplicate_rows}",
+            f"duplicate reports removed:     {self.duplicates_removed}",
         ]
 
 
@@ -102,9 +104,16 @@ def _read_raw(path: Path, sheet_name: Optional[str]) -> tuple[pd.DataFrame, str,
 
 
 def load_input(
-    path: Path, *, sheet_name: Optional[str] = None
+    path: Path, *, sheet_name: Optional[str] = None, deduplicate: bool = True
 ) -> LoadedData:
-    """Load, validate, normalize, and annotate a KISIM export."""
+    """Load, validate, normalize, and annotate a KISIM export.
+
+    When ``deduplicate`` is true (default), repeated pathology reports with
+    identical text for the same patient are collapsed to a single row (the
+    earliest-dated occurrence is kept). This prevents the LLM from seeing the
+    same text many times and keeps prompts small. Blank/missing-text rows are
+    never removed.
+    """
     path = Path(path)
     df_raw, used_sheet, errors = _read_raw(path, sheet_name)
     df = normalize_columns(df_raw)
@@ -143,17 +152,72 @@ def load_input(
     df[COL_DATE_PARSE_OK] = date_ok_flags
     df[COL_ROW_STATUS] = row_statuses
 
-    summary = _summarize(df, date_parse_failures)
+    duplicate_rows = _count_duplicate_reports(df)
+    duplicates_removed = 0
+    if deduplicate:
+        df, duplicates_removed = _deduplicate_reports(df)
+
+    summary = _summarize(df, date_parse_failures, duplicate_rows, duplicates_removed)
     LOGGER.info(
-        "Loaded %s: rows=%d patients=%d usable_rows=%d",
-        path.name, summary.total_rows, summary.unique_patients, summary.rows_with_text,
+        "Loaded %s: rows=%d patients=%d usable_rows=%d dup_removed=%d",
+        path.name, summary.total_rows, summary.unique_patients,
+        summary.rows_with_text, duplicates_removed,
     )
     return LoadedData(
         df=df, summary=summary, sheet_name=used_sheet, source_path=path, errors=errors
     )
 
 
-def _summarize(df: pd.DataFrame, date_parse_failures: int) -> DatasetSummary:
+def _text_key(val) -> str:
+    """Whitespace- and case-insensitive key for detecting identical report text."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    return " ".join(str(val).split()).lower()
+
+
+def _count_duplicate_reports(df: pd.DataFrame) -> int:
+    """Count usable rows whose (patnr, report text) repeats an earlier usable row."""
+    if COL_P_KOM not in df.columns:
+        return 0
+    usable = df[df[COL_ROW_STATUS] == ROW_STATUS_USABLE].copy()
+    if usable.empty:
+        return 0
+    usable["_kom_key"] = usable[COL_P_KOM].map(_text_key)
+    return int(usable.duplicated(subset=[COL_PATNR_STR, "_kom_key"], keep="first").sum())
+
+
+def _deduplicate_reports(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Drop repeated usable reports per patient, keeping the earliest-dated copy.
+
+    Only usable (non-blank) rows are considered; blank/missing-text rows are
+    always retained so patients are never silently dropped.
+    """
+    if COL_P_KOM not in df.columns:
+        return df, 0
+
+    usable = df[df[COL_ROW_STATUS] == ROW_STATUS_USABLE].copy()
+    if usable.empty:
+        return df, 0
+
+    usable["_kom_key"] = usable[COL_P_KOM].map(_text_key)
+    usable["_sort_dt"] = usable[COL_P_DAT_PARSED].map(
+        lambda t: t if isinstance(t, pd.Timestamp) else pd.Timestamp.max
+    )
+    usable = usable.sort_values(["_sort_dt", COL_ROW_INDEX], kind="stable")
+    dup_mask = usable.duplicated(subset=[COL_PATNR_STR, "_kom_key"], keep="first")
+    drop_labels = usable.index[dup_mask]
+    removed = int(len(drop_labels))
+    if removed:
+        df = df.drop(index=drop_labels).reset_index(drop=True)
+    return df, removed
+
+
+def _summarize(
+    df: pd.DataFrame,
+    date_parse_failures: int,
+    duplicate_rows: int,
+    duplicates_removed: int,
+) -> DatasetSummary:
     total = len(df)
     usable_mask = df[COL_ROW_STATUS] == ROW_STATUS_USABLE
     rows_with_text = int(usable_mask.sum())
@@ -166,10 +230,6 @@ def _summarize(df: pd.DataFrame, date_parse_failures: int) -> DatasetSummary:
     patients_with = len(usable_patient_ids)
     patients_without = len(all_patient_ids - usable_patient_ids)
 
-    # Duplicate rows on (patnr, p_kom) content.
-    dup_cols = [COL_PATNR_STR, COL_P_KOM] if COL_P_KOM in df.columns else [COL_PATNR_STR]
-    duplicate_rows = int(df.duplicated(subset=dup_cols, keep="first").sum())
-
     return DatasetSummary(
         total_rows=total,
         unique_patients=unique_patients,
@@ -179,4 +239,5 @@ def _summarize(df: pd.DataFrame, date_parse_failures: int) -> DatasetSummary:
         patients_without_usable_report=patients_without,
         date_parse_failures=date_parse_failures,
         duplicate_rows=duplicate_rows,
+        duplicates_removed=duplicates_removed,
     )
