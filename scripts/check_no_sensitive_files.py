@@ -38,6 +38,7 @@ RISKY_PREFIXES: Tuple[str, ...] = (
     "models_Ollama/",
     "wheelhouse/",
     "wheelhouse_linux/",
+    "tumor_venv/",
     "Ba_venv/",
     "Ba_venv_backup/",
     ".venv/",

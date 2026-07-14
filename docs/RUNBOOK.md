@@ -5,8 +5,8 @@ Operational guide for running the tumor histopathology pipeline.
 ## 1. Setup
 
 ```bash
-python3 -m venv Ba_venv
-source Ba_venv/bin/activate
+python3 -m venv tumor_venv
+source tumor_venv/bin/activate
 pip install -r requirements.txt
 python3 -m pytest tests        # sanity check (synthetic only)
 ```

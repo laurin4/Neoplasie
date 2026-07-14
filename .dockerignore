@@ -1,5 +1,6 @@
 .git
 .pytest_cache
+tumor_venv
 Ba_venv
 .venv
 __pycache__
