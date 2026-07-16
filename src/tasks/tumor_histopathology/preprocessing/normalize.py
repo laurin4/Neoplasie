@@ -65,6 +65,38 @@ def to_str_id(value: object) -> str:
     return s
 
 
+# Markers after which a pathology report degenerates into a gene-panel coverage
+# list (accession numbers, gene symbols, "Hotspot, Exon ..." lines). Everything
+# from the first marker onward is non-diagnostic boilerplate and is cut before
+# the text reaches the LLM. Matched case-insensitively.
+REFERENCE_CUT_MARKERS: Tuple[str, ...] = (
+    "Untersuchte Genabschnitte",
+)
+
+
+def strip_reference_section(
+    value: object, markers: Tuple[str, ...] = REFERENCE_CUT_MARKERS
+) -> str:
+    """Return report text with any trailing gene-panel reference section removed.
+
+    Cuts everything from the first occurrence of a known marker (e.g.
+    ``"Untersuchte Genabschnitte"``) onward, preserving the diagnostic prose that
+    precedes it. Returns the text unchanged if no marker is present.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    lowered = text.lower()
+    cut: Optional[int] = None
+    for marker in markers:
+        idx = lowered.find(marker.lower())
+        if idx != -1:
+            cut = idx if cut is None else min(cut, idx)
+    if cut is None:
+        return text
+    return text[:cut].rstrip()
+
+
 def is_missing_text(value: object) -> bool:
     """True if the pathology text is missing (NaN, empty, or whitespace-only)."""
     if value is None:

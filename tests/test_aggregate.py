@@ -52,6 +52,36 @@ def test_patient_with_only_blank_has_no_usable_reports(tmp_path):
     assert rec.context_text == ""
 
 
+def test_reference_gene_section_stripped_by_default(tmp_path):
+    report = (
+        "Diagnose: Glioblastom, IDH-Wildtyp, WHO Grad 4.\n"
+        "MGMT-Promotor methyliert.\n\n"
+        "Untersuchte Genabschnitte\n"
+        "NM_004333.6\nCDK4\nHotspot, Exon 2\n"
+        "NM_000075.4\nCDKN2A\nHotspot, Exon 2\n"
+        "EGFR\nHotspot, Exon 3, 7, (11), 12, 15, 18-21, (24-26)\nNM_005228.5\n"
+    )
+    recs = _records_from_rows([
+        {"patnr": "P1", "p_dat": "2024-01-01", "p_kom": report},
+    ], tmp_path)
+    ctx = recs[0].context_text
+    assert "Glioblastom" in ctx                       # diagnosis kept
+    assert "MGMT-Promotor methyliert" in ctx          # finding kept
+    assert "Untersuchte Genabschnitte" not in ctx     # marker + list removed
+    assert "NM_005228.5" not in ctx
+    assert "CDKN2A" not in ctx
+
+
+def test_reference_gene_section_kept_when_disabled(tmp_path):
+    report = "Diagnose: Meningeom.\nUntersuchte Genabschnitte\nNM_004333.6\nCDK4\n"
+    recs = _records_from_rows([
+        {"patnr": "P1", "p_dat": "2024-01-01", "p_kom": report},
+    ], tmp_path, strip_reference=False)
+    ctx = recs[0].context_text
+    assert "Untersuchte Genabschnitte" in ctx
+    assert "NM_004333.6" in ctx
+
+
 def test_truncation_keeps_most_recent(tmp_path):
     long_text = "X" * 500
     recs = _records_from_rows([

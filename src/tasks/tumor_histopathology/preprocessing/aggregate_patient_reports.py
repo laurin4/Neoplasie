@@ -23,6 +23,7 @@ from src.tasks.tumor_histopathology.io.input_loader import (
     COL_ROW_STATUS,
 )
 from src.tasks.tumor_histopathology.io.schema import ROW_STATUS_USABLE
+from src.tasks.tumor_histopathology.preprocessing.normalize import strip_reference_section
 
 
 @dataclass
@@ -80,9 +81,18 @@ def _sort_key(entry: ReportEntry):
 
 
 def build_patient_records(
-    df: pd.DataFrame, *, max_context_chars: Optional[int] = None
+    df: pd.DataFrame,
+    *,
+    max_context_chars: Optional[int] = None,
+    strip_reference: bool = True,
 ) -> List[PatientRecord]:
-    """Build one :class:`PatientRecord` per patient (order preserved by first row)."""
+    """Build one :class:`PatientRecord` per patient (order preserved by first row).
+
+    When ``strip_reference`` is true (default), the trailing gene-panel coverage
+    section of each report (from ``"Untersuchte Genabschnitte"`` onward) is
+    removed before it enters the LLM context, cutting token-heavy boilerplate
+    without losing the diagnostic prose.
+    """
     if max_context_chars is None:
         max_context_chars = config.get_max_context_chars()
 
@@ -107,13 +117,18 @@ def build_patient_records(
             ts = row.get(COL_P_DAT_PARSED)
             if isinstance(ts, float) and pd.isna(ts):
                 ts = None
+            text = _cell_str(row, COL_P_KOM)
+            if strip_reference:
+                stripped = strip_reference_section(text).strip()
+                if stripped:  # never blank out a report entirely
+                    text = stripped
             entry = ReportEntry(
                 source_row_index=int(row[COL_ROW_INDEX]),
                 date=ts if isinstance(ts, pd.Timestamp) else None,
                 date_str=_date_str(ts if isinstance(ts, pd.Timestamp) else None),
                 p_nr=_cell_str(row, "p_nr"),
                 p_fnr=_cell_str(row, "p_fnr"),
-                text=_cell_str(row, COL_P_KOM),
+                text=text,
             )
             entries.append(entry)
             dates.append(entry.date_str)

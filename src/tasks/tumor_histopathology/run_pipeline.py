@@ -50,6 +50,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Keep repeated identical reports per patient (default: de-duplicate).",
     )
+    p.add_argument(
+        "--keep-reference-genes",
+        action="store_true",
+        help="Keep the gene-panel section after 'Untersuchte Genabschnitte' "
+        "(default: cut it to shrink oversized reports).",
+    )
     p.add_argument("--prompt-preview", action="store_true", help="Print the prompt for one patient and exit.")
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
     return p
@@ -106,7 +112,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    records = build_patient_records(loaded.df)
+    records = build_patient_records(
+        loaded.df, strip_reference=not args.keep_reference_genes
+    )
     selected = _select_records(records, patient_id=args.patient_id, limit=args.limit)
 
     mode = "dry-run" if args.dry_run else ("no-llm" if args.no_llm else "classify")
