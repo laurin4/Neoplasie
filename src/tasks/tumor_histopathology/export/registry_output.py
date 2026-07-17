@@ -21,6 +21,7 @@ from src.tasks.tumor_histopathology.constants import (
 from src.tasks.tumor_histopathology.inference.result import PatientResult
 from src.tasks.tumor_histopathology.io.schema import (
     STATUS_SUCCESS,
+    status_sort_key,
     template_output_columns,
 )
 
@@ -49,8 +50,12 @@ def build_registry_dataframe(
     reference the missing-information and failed output files for those.
     """
     latest_text_by_patnr = latest_text_by_patnr or {}
+    ordered = sorted(
+        results,
+        key=lambda r: (status_sort_key(r.classification_status), r.patnr),
+    )
     rows: List[Dict[str, object]] = []
-    for r in results:
+    for r in ordered:
         row: Dict[str, object] = {
             COL_PATNR: r.patnr,
             COL_P_DAT: r.latest_p_dat,

@@ -44,6 +44,23 @@ POSITIVE_STATUSES = frozenset({STATUS_SUCCESS})
 
 CERTAINTY_VALUES = frozenset({"low", "medium", "high"})
 
+# Patient-level output row order: classified first, missing info next,
+# unresolved / failed last (so missing and failed sit at the bottom).
+STATUS_SORT_ORDER: dict[str, int] = {
+    STATUS_SUCCESS: 0,
+    STATUS_UNCERTAIN: 1,
+    STATUS_NO_TUMOR_INFORMATION: 2,
+    STATUS_UNSUPPORTED_CATEGORY: 3,
+    STATUS_PARSE_FAILED: 4,
+    STATUS_LLM_FAILED: 5,
+    STATUS_LLM_DISABLED: 6,
+}
+
+
+def status_sort_key(status: str) -> int:
+    """Lower = earlier in the patient / registry lists."""
+    return STATUS_SORT_ORDER.get(status, 99)
+
 
 # ---------------------------------------------------------------------------
 # Row-level input quality status (Phase 4).

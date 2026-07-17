@@ -127,6 +127,17 @@ def test_registry_and_failed_outputs(tmp_path):
     p4 = reg[reg["patnr"] == "P4"].iloc[0]
     assert set(str(p4[c]) for c in TARGET_COLUMNS) == {"0"}
 
+    # Row order: success first, missing info next, failed last.
+    pred = pd.read_csv(paths["patient_predictions_csv"], dtype=object)
+    statuses = list(pred["classification_status"])
+    assert statuses[0] == "success"
+    assert "no_tumor_information" in statuses
+    assert statuses.index("no_tumor_information") < min(
+        i for i, s in enumerate(statuses)
+        if s in ("unsupported_category", "parse_failed", "llm_failed")
+    )
+    assert list(reg["patnr"]) == list(pred["patnr"])  # same sort in registry
+
     # Failed list: only the not-classified-but-had-text cases.
     fdf = pd.read_csv(paths["failed_csv"], dtype=object)
     assert set(fdf["patnr"]) == {"P2", "P3"}

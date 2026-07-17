@@ -24,6 +24,7 @@ from src.tasks.tumor_histopathology.io.schema import (
     MISSING_INFO_COLUMNS,
     STATUS_SUCCESS,
     patient_output_columns,
+    status_sort_key,
 )
 
 
@@ -87,8 +88,16 @@ def build_patient_row(result: PatientResult) -> Dict[str, object]:
     return row
 
 
+def _sorted_results(results: List[PatientResult]) -> List[PatientResult]:
+    """Success first, then no-tumor-info, then failed / unresolved last."""
+    return sorted(
+        results,
+        key=lambda r: (status_sort_key(r.classification_status), r.patnr),
+    )
+
+
 def build_patient_dataframe(results: List[PatientResult]) -> pd.DataFrame:
-    rows = [build_patient_row(r) for r in results]
+    rows = [build_patient_row(r) for r in _sorted_results(results)]
     df = pd.DataFrame(rows, columns=patient_output_columns())
     return df
 
