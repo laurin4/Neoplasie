@@ -94,6 +94,56 @@ def test_template_columns_start_with_patnr_pdat_pkom():
     assert template_output_columns()[:3] == ["patnr", "p_dat", "p_kom"]
 
 
+def test_registry_and_failed_outputs(tmp_path):
+    stub = StubLLM(by_substring={
+        "Glioblastom": tumor_json("Glioblastom"),
+        "Weird": tumor_json("NichtExistierenderTumorXYZ"),   # unsupported
+        "Broken": "this is not valid json at all",           # parse_failed
+    }, default=tumor_json(None, available=False))
+    rows = [
+        {"patnr": "P1", "p_dat": "2018-01-01", "p_kom": "Alt: Gliom"},
+        {"patnr": "P1", "p_dat": "2023-05-05", "p_kom": "Glioblastom aktuell"},
+        {"patnr": "P2", "p_dat": "2021-01-01", "p_kom": "Weird tumor description"},
+        {"patnr": "P3", "p_dat": "2021-01-01", "p_kom": "Broken output please"},
+        {"patnr": "P4", "p_kom": ""},  # missing info
+    ]
+    path = write_xlsx(make_input_df(rows), tmp_path / "in.xlsx")
+    records = build_patient_records(load_input(path).df)
+    results = run_inference(records, output_dir=tmp_path, llm_callable=stub)
+    latest = {r.patnr: r.latest_report_text for r in records}
+
+    paths = write_all_outputs(results, tmp_path / "out", latest)
+
+    # Registry template: exact column order, one row per patient, latest text.
+    reg = pd.read_csv(paths["registry_template_csv"], dtype=object)
+    assert list(reg.columns) == template_output_columns()
+    assert set(reg["patnr"]) == {"P1", "P2", "P3", "P4"}
+    p1 = reg[reg["patnr"] == "P1"].iloc[0]
+    assert p1["p_dat"] == "2023-05-05"                 # latest date
+    assert p1["p_kom"] == "Glioblastom aktuell"        # latest report text
+    assert str(p1["12_Glioblastom"]) == "1"            # one-hot set
+
+    # Failed list: only the not-classified-but-had-text cases.
+    fdf = pd.read_csv(paths["failed_csv"], dtype=object)
+    assert set(fdf["patnr"]) == {"P2", "P3"}
+    assert set(fdf["classification_status"]) == {"unsupported_category", "parse_failed"}
+
+
+def test_resume_retries_parse_failed(tmp_path):
+    bad = StubLLM(default="not json")
+    _run([{"patnr": "P1", "p_dat": "2021-01-01", "p_kom": "Glioblastom"}], bad, tmp_path)
+    assert len(bad.calls) == 1
+
+    good = StubLLM(default=tumor_json("Glioblastom"))
+    results = _run(
+        [{"patnr": "P1", "p_dat": "2021-01-01", "p_kom": "Glioblastom"}],
+        good, tmp_path, resume=True,
+    )
+    assert len(good.calls) == 1                        # parse_failed was retried
+    assert results[0].classification_status == "success"
+    assert results[0].predicted_tumor_category == "glioblastom"
+
+
 def test_output_xlsx_readable(tmp_path):
     stub = StubLLM(default=tumor_json("Glioblastom"))
     results = _run([{"patnr": "P1", "p_dat": "2021-01-01", "p_kom": "Glioblastom"}], stub, tmp_path)

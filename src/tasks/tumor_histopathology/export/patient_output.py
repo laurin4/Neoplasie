@@ -19,10 +19,23 @@ from src.tasks.tumor_histopathology.constants import (
 )
 from src.tasks.tumor_histopathology.inference.result import PatientResult
 from src.tasks.tumor_histopathology.io.schema import (
+    FAILED_COLUMNS,
+    FAILED_STATUSES,
     MISSING_INFO_COLUMNS,
     STATUS_SUCCESS,
     patient_output_columns,
 )
+
+
+def tumor_onehot(result: PatientResult) -> Dict[str, object]:
+    """One-hot tumor columns: all blank, exactly one set to 1 on success."""
+    row: Dict[str, object] = {col: "" for col in TARGET_COLUMNS}
+    if (
+        result.classification_status == STATUS_SUCCESS
+        and result.predicted_output_column in TARGET_COLUMNS
+    ):
+        row[result.predicted_output_column] = 1
+    return row
 
 
 def _evidence_summary(result: PatientResult) -> str:
@@ -69,11 +82,7 @@ def build_patient_row(result: PatientResult) -> Dict[str, object]:
     row[COL_KEINE_TUMORINFORMATION] = 1 if result.no_tumor_information else ""
 
     # One-hot tumor columns: blank by default, exactly one set to 1 on success.
-    for col in TARGET_COLUMNS:
-        row[col] = ""
-    if result.classification_status == STATUS_SUCCESS and result.predicted_output_column:
-        if result.predicted_output_column in TARGET_COLUMNS:
-            row[result.predicted_output_column] = 1
+    row.update(tumor_onehot(result))
 
     return row
 
@@ -103,3 +112,25 @@ def build_missing_dataframe(results: List[PatientResult]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=MISSING_INFO_COLUMNS)
+
+
+def build_failed_dataframe(results: List[PatientResult]) -> pd.DataFrame:
+    """Patients that had text but were not classified (need attention / re-run)."""
+    rows = []
+    for r in results:
+        if r.classification_status not in FAILED_STATUSES:
+            continue
+        rows.append(
+            {
+                COL_PATNR: r.patnr,
+                "classification_status": r.classification_status,
+                "usable_report_count": r.usable_report_count,
+                "latest_p_dat": r.latest_p_dat,
+                "predicted_tumor_category": r.predicted_tumor_category or "",
+                "certainty": r.certainty,
+                "reasoning": r.reasoning,
+                "error_message": r.error_message,
+                "manual_review_reasons": "; ".join(r.manual_review_reasons),
+            }
+        )
+    return pd.DataFrame(rows, columns=FAILED_COLUMNS)

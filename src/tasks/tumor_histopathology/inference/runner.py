@@ -191,10 +191,11 @@ def run_inference(
     done: dict[str, PatientResult] = {}
     if resume and progress_path.exists():
         loaded = _load_progress(progress_path)
-        # Retry transient LLM failures on resume; keep every other outcome.
+        # Retry recoverable failures on resume (transient LLM errors and
+        # unparseable responses); keep every other outcome as final.
         done = {
             pid: r for pid, r in loaded.items()
-            if r.classification_status != STATUS_LLM_FAILED
+            if r.classification_status not in (STATUS_LLM_FAILED, STATUS_PARSE_FAILED)
         }
         retryable = len(loaded) - len(done)
         LOGGER.info(

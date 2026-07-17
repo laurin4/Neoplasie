@@ -53,6 +53,15 @@ class PatientRecord:
     def has_usable_reports(self) -> bool:
         return self.usable_report_count > 0
 
+    @property
+    def latest_report_text(self) -> str:
+        """Text of the most recent usable report (latest dated, else last)."""
+        if not self.reports:
+            return ""
+        dated = [e for e in self.reports if e.date is not None]
+        entry = dated[-1] if dated else self.reports[-1]
+        return entry.text
+
 
 def _date_str(ts: Optional[pd.Timestamp]) -> str:
     if ts is None or ts is pd.NaT:

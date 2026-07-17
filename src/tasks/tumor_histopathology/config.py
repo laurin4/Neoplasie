@@ -25,6 +25,11 @@ PATIENT_PREDICTIONS_XLSX = "tumor_histopathology_patient_predictions.xlsx"
 PATIENT_PREDICTIONS_CSV = "tumor_histopathology_patient_predictions.csv"
 MISSING_INFORMATION_CSV = "tumor_histopathology_missing_information.csv"
 REVIEW_CSV = "tumor_histopathology_review.csv"
+# Clean registry-template layout (patnr, p_dat, p_kom, then the 12_* columns).
+REGISTRY_TEMPLATE_XLSX = "tumor_histopathology_registry_template.xlsx"
+REGISTRY_TEMPLATE_CSV = "tumor_histopathology_registry_template.csv"
+# Patients that could not be classified and are not "no tumor information".
+FAILED_CSV = "tumor_histopathology_failed.csv"
 
 
 def _env(name: str, default: str = "") -> str:

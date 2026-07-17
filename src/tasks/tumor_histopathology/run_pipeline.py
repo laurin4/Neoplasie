@@ -163,7 +163,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         progress_path=progress_path,
     )
 
-    paths = write_all_outputs(results, output_dir)
+    latest_text_by_patnr = {r.patnr: r.latest_report_text for r in selected}
+    paths = write_all_outputs(results, output_dir, latest_text_by_patnr)
     print("\nOutputs written:")
     for label, fp in paths.items():
         print(f"  {label}: {fp}")

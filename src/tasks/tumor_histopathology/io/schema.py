@@ -121,3 +121,25 @@ MISSING_INFO_COLUMNS: List[str] = [
     "classification_status",
     "note",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Failed / unresolved output: patients that had text but were not classified
+# (llm_failed, parse_failed, unsupported_category). Not the same as missing
+# information -- these still need attention or a re-run.
+# ---------------------------------------------------------------------------
+FAILED_STATUSES = frozenset(
+    {STATUS_LLM_FAILED, STATUS_PARSE_FAILED, STATUS_UNSUPPORTED_CATEGORY}
+)
+
+FAILED_COLUMNS: List[str] = [
+    COL_PATNR,
+    "classification_status",
+    "usable_report_count",
+    "latest_p_dat",
+    "predicted_tumor_category",
+    "certainty",
+    "reasoning",
+    "error_message",
+    "manual_review_reasons",
+]
