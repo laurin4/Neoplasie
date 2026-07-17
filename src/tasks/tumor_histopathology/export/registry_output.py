@@ -16,17 +16,38 @@ from src.tasks.tumor_histopathology.constants import (
     COL_P_DAT,
     COL_P_KOM,
     COL_PATNR,
+    TARGET_COLUMNS,
 )
-from src.tasks.tumor_histopathology.export.patient_output import tumor_onehot
 from src.tasks.tumor_histopathology.inference.result import PatientResult
-from src.tasks.tumor_histopathology.io.schema import template_output_columns
+from src.tasks.tumor_histopathology.io.schema import (
+    STATUS_SUCCESS,
+    template_output_columns,
+)
+
+
+def _binary_columns(result: PatientResult) -> Dict[str, int]:
+    """Full 0/1 vector: all zero, exactly one 1 for a successfully classified
+    patient. Non-success patients (missing info / failed) are all-zero."""
+    cols: Dict[str, int] = {col: 0 for col in TARGET_COLUMNS}
+    if (
+        result.classification_status == STATUS_SUCCESS
+        and result.predicted_output_column in TARGET_COLUMNS
+    ):
+        cols[result.predicted_output_column] = 1
+    return cols
 
 
 def build_registry_dataframe(
     results: List[PatientResult],
     latest_text_by_patnr: Mapping[str, str] | None = None,
 ) -> pd.DataFrame:
-    """One row per patient in the exact registry-template column order."""
+    """One row per patient in the exact registry-template column order.
+
+    Tumor columns are a 0/1 binary matrix (every cell filled). A ``success``
+    patient has exactly one ``1``; patients without a final classification
+    (missing information or a failed/unsupported outcome) are all-zero -- cross
+    reference the missing-information and failed output files for those.
+    """
     latest_text_by_patnr = latest_text_by_patnr or {}
     rows: List[Dict[str, object]] = []
     for r in results:
@@ -35,6 +56,6 @@ def build_registry_dataframe(
             COL_P_DAT: r.latest_p_dat,
             COL_P_KOM: latest_text_by_patnr.get(r.patnr, ""),
         }
-        row.update(tumor_onehot(r))
+        row.update(_binary_columns(r))
         rows.append(row)
     return pd.DataFrame(rows, columns=template_output_columns())

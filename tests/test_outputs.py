@@ -121,7 +121,11 @@ def test_registry_and_failed_outputs(tmp_path):
     p1 = reg[reg["patnr"] == "P1"].iloc[0]
     assert p1["p_dat"] == "2023-05-05"                 # latest date
     assert p1["p_kom"] == "Glioblastom aktuell"        # latest report text
-    assert str(p1["12_Glioblastom"]) == "1"            # one-hot set
+    assert str(p1["12_Glioblastom"]) == "1"            # binary: selected
+    assert str(p1["12_Meningeom"]) == "0"              # binary: not selected
+    # Non-success patients are all-zero across tumor columns.
+    p4 = reg[reg["patnr"] == "P4"].iloc[0]
+    assert set(str(p4[c]) for c in TARGET_COLUMNS) == {"0"}
 
     # Failed list: only the not-classified-but-had-text cases.
     fdf = pd.read_csv(paths["failed_csv"], dtype=object)
