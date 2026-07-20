@@ -27,6 +27,13 @@ def test_success_with_synonym():
     assert res.current_tumor_category == "glioblastom"
 
 
+def test_medulloblastom_maps_to_pnet():
+    res = parse_tumor_response(tumor_json("Medulloblastom"))
+    assert res.status == STATUS_SUCCESS
+    assert res.current_tumor_category == "pnet"
+    assert res.predicted_output_column == "12_PNET"
+
+
 def test_markdown_fenced_json_parses():
     raw = "```json\n" + tumor_json("Meningeom") + "\n```"
     res = parse_tumor_response(raw)

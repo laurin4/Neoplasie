@@ -21,6 +21,9 @@ Authoritative rules from the clinical supervisor. The model classifies the
 6. Full patient context is preferred when it improves classification.
 7. Patients with no usable tumor information must be **clearly marked** so
    another data source can be used later.
+8. **Medulloblastom** is a special form of **PNET** (clinical supervisor,
+   2026-07). Map Medulloblastom to the registry column `12_PNET`
+   (canonical key `pnet`); there is no separate Medulloblastom column.
 
 ## Diagnostic distinctions the system tracks
 

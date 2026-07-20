@@ -68,6 +68,10 @@ def test_synonym_resolution_variants():
     assert c.resolve_category("meningioma") == "meningeom"
     assert c.resolve_category("Hirnmetastase") == "metastase"
     assert c.resolve_category("brain metastasis") == "metastase"
+    # Clinical supervisor: Medulloblastom is a special form of PNET.
+    assert c.resolve_category("Medulloblastom") == "pnet"
+    assert c.resolve_category("medulloblastoma") == "pnet"
+    assert c.TUMOR_CATEGORY_TO_COLUMN["pnet"] == "12_PNET"
 
 
 def test_extracranial_primary_not_mapped():

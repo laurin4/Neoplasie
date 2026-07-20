@@ -22,7 +22,9 @@ WICHTIGE REGELN:
 10. Verwende AUSSCHLIESSLICH die erlaubte kontrollierte Vokabelliste.
 11. Erfinde KEINE Kategorie. Extrakranielle Primaertumoren werden NICHT
     automatisch einer neuro-onkologischen Kategorie zugeordnet.
-12. Halte die Begruendung kurz und praezise.
+12. Medulloblastom ist eine spezielle Form des PNET und wird als "pnet"
+    klassifiziert (nicht als eigene Kategorie).
+13. Halte die Begruendung kurz und praezise.
 
 ERLAUBTE KATEGORIEN (gib den kanonischen Schluessel links zurueck):
 {VOCABULARY}

@@ -122,7 +122,7 @@ CATEGORY_DISPLAY: Dict[str, str] = {
     "pineocytom": "Pineozytom",
     "pineoblastom": "Pineoblastom",
     "neuroblastom": "Neuroblastom",
-    "pnet": "PNET (primitiver neuroektodermaler Tumor)",
+    "pnet": "PNET (primitiver neuroektodermaler Tumor; inkl. Medulloblastom)",
     "meningeom": "Meningeom (Grad I)",
     "atypisches_meningeom": "Atypisches Meningeom (Grad II)",
     "anaplastisches_meningeom": "Anaplastisches/malignes Meningeom (Grad III)",
@@ -202,6 +202,9 @@ CATEGORY_SYNONYMS: Dict[str, List[str]] = {
     "pnet": [
         "pnet", "primitiver neuroektodermaler tumor",
         "primitive neuroectodermal tumor", "primitiv neuroektodermaler tumor",
+        # Clinical supervisor (2026-07): Medulloblastom is a special form of PNET.
+        "medulloblastom", "medulloblastoma", "medullo blastom",
+        "medulloblastom who", "embryonaler tumor medulloblastom",
     ],
     "meningeom": [
         "meningeom", "meningioma", "meningeom grad i", "meningioma grade i",
